@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Autenticação ───────────────────────────────────────────
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senha     String
+  perfil    Perfil   @default(OPERADOR)
+  ativo     Boolean  @default(true)
+  criadoEm DateTime @default(now())
+
+  movimentacoes Movimentacao[]
+  logs          LogAcao[]
+  solicitacoes  Solicitacao[]
+  permissoes    PermissaoUsuario[]
+
+  @@map("usuarios")
+}
+
+enum Perfil {
+  ADMIN
+  OPERADOR
+  CONSULTA
+}
+
+// ─── Clientes e Setores ─────────────────────────────────────
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nome      String   @unique
+  ativo     Boolean  @default(true)
+  criadoEm DateTime @default(now())
+
+  setores    Setor[]
+  caixas     Caixa[]
+  permissoes PermissaoUsuario[]
+
+  @@map("clientes")
+}
+
+model Setor {
+  id        String  @id @default(cuid())
+  nome      String
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id])
+
+  documentos Documento[]
+  permissoes PermissaoUsuario[]
+
+  @@unique([nome, clienteId])
+  @@map("setores")
+}
+
+// ─── Estrutura Física ───────────────────────────────────────
+
+model Endereco {
+  id             String @id @default(cuid())
+  barracão       Int
+  corredor       String
+  prateleira     Int
+  andar          Int
+  posicao        Int
+  enderecoCodigo String @unique
+
+  caixa Caixa?
+
+  @@map("enderecos")
+}
+
+// ─── Caixas ─────────────────────────────────────────────────
+
+model Caixa {
+  id            String      @id @default(cuid())
+  etiqueta      String      @unique
+  clienteId     String
+  cliente       Cliente     @relation(fields: [clienteId], references: [id])
+  enderecoId    String?     @unique
+  endereco      Endereco?   @relation(fields: [enderecoId], references: [id])
+  status        StatusCaixa @default(ATIVA)
+  observacao    String?
+  criadoEm     DateTime    @default(now())
+  atualizadoEm DateTime    @updatedAt
+
+  documentos    Documento[]
+  movimentacoes Movimentacao[]
+  solicitacoes  Solicitacao[]
+  descartes     CaixaDescarte[]
+
+  @@map("caixas")
+}
+
+enum StatusCaixa {
+  ATIVA
+  RETIRADA
+  ARQUIVADA
+}
+
+// ─── Tipos de Documento ─────────────────────────────────────
+
+model TipoDocumento {
+  id             String   @id @default(cuid())
+  nome           String   @unique
+  descricao      String?
+  tempGuardaAnos Int      @default(5)
+  ativo          Boolean  @default(true)
+  criadoEm      DateTime @default(now())
+
+  campos     CampoTipoDocumento[]
+  documentos Documento[]
+
+  @@map("tipos_documento")
+}
+
+model CampoTipoDocumento {
+  id              String        @id @default(cuid())
+  tipoDocumentoId String
+  tipoDocumento   TipoDocumento @relation(fields: [tipoDocumentoId], references: [id])
+  nome            String
+  label           String
+  tipo            TipoCampo     @default(TEXTO)
+  obrigatorio     Boolean       @default(false)
+  ordem           Int           @default(0)
+  opcoes          String?
+
+  @@map("campos_tipo_documento")
+}
+
+enum TipoCampo {
+  TEXTO
+  NUMERO
+  DATA
+  SELECAO
+  BOOLEAN
+}
+
+// ─── Documentos ─────────────────────────────────────────────
+
+model Documento {
+  id              String         @id @default(cuid())
+  caixaId         String
+  caixa           Caixa          @relation(fields: [caixaId], references: [id])
+  setorId         String
+  setor           Setor          @relation(fields: [setorId], references: [id])
+  tipoDocumentoId String?
+  tipoDocumento   TipoDocumento? @relation(fields: [tipoDocumentoId], references: [id])
+  nomeDocumento   String?
+  dataInicial     DateTime?
+  dataFinal       DateTime?
+  solicitante     String?
+  dataFimGuarda   DateTime?
+  metadata        Json           @default("{}")
+  criadoEm       DateTime       @default(now())
+
+  @@map("documentos")
+}
+
+// ─── Movimentações ──────────────────────────────────────────
+
+model Movimentacao {
+  id              String           @id @default(cuid())
+  caixaId         String
+  caixa           Caixa            @relation(fields: [caixaId], references: [id])
+  usuarioId       String
+  usuario         Usuario          @relation(fields: [usuarioId], references: [id])
+  tipo            TipoMovimentacao
+  enderecoOrigem  String?
+  enderecoDestino String?
+  observacao      String?
+  criadoEm       DateTime         @default(now())
+
+  @@map("movimentacoes")
+}
+
+enum TipoMovimentacao {
+  ENTRADA
+  SAIDA
+  TRANSFERENCIA
+}
+
+// ─── Log de Auditoria ───────────────────────────────────────
+
+model LogAcao {
+  id         String   @id @default(cuid())
+  usuarioId  String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+  acao       String
+  entidade   String
+  entidadeId String
+  detalhe    Json?
+  criadoEm  DateTime @default(now())
+
+  @@map("logs_acoes")
+}
+
+// ─── Solicitações ───────────────────────────────────────────
+
+model Solicitacao {
+  id            String            @id @default(cuid())
+  caixaId       String
+  caixa         Caixa             @relation(fields: [caixaId], references: [id])
+  usuarioId     String
+  usuario       Usuario           @relation(fields: [usuarioId], references: [id])
+  tipo          TipoSolicitacao   @default(NORMAL)
+  status        StatusSolicitacao @default(PENDENTE)
+  motivo        String?
+  localEntrega  String?
+  prazoHoras    Int               @default(24)
+  criadoEm     DateTime          @default(now())
+  atendidoEm   DateTime?
+
+  entregas Entrega[]
+
+  @@map("solicitacoes")
+}
+
+enum TipoSolicitacao {
+  NORMAL
+  URGENTE
+}
+
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADA
+  EM_ROTA
+  ENTREGUE
+  DEVOLVIDA
+  CANCELADA
+}
+
+// ─── Entregas ───────────────────────────────────────────────
+
+model Entrega {
+  id            String      @id @default(cuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id])
+  status        String
+  observacao    String?
+  criadoEm     DateTime    @default(now())
+
+  @@map("entregas")
+}
+
+// ─── Descarte ───────────────────────────────────────────────
+
+model Descarte {
+  id          String         @id @default(cuid())
+  status      StatusDescarte @default(PENDENTE)
+  motivo      String?
+  metodo      String?
+  aprovadoPor String?
+  criadoEm   DateTime       @default(now())
+  executadoEm DateTime?
+
+  caixas CaixaDescarte[]
+
+  @@map("descartes")
+}
+
+enum StatusDescarte {
+  PENDENTE
+  APROVADO
+  EXECUTADO
+  CANCELADO
+}
+
+model CaixaDescarte {
+  id         String   @id @default(cuid())
+  descarteId String
+  descarte   Descarte @relation(fields: [descarteId], references: [id])
+  caixaId    String
+  caixa      Caixa    @relation(fields: [caixaId], references: [id])
+
+  @@map("caixas_descarte")
+}
+
+// ─── Permissões ─────────────────────────────────────────────
+
+model PermissaoUsuario {
+  id        String   @id @default(cuid())
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  clienteId String?
+  cliente   Cliente? @relation(fields: [clienteId], references: [id])
+  setorId   String?
+  setor     Setor?   @relation(fields: [setorId], references: [id])
+
+  @@map("permissoes_usuarios")
+}
